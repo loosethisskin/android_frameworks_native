@@ -99,6 +99,9 @@ DisplayDevice::DisplayDevice(
 }
 
 DisplayDevice::~DisplayDevice() {
+#ifdef OMAP_ENHANCEMENT_HDMI_FB1
+    mFlinger->freeHwcDisplayId(mHwcDisplayId);
+#endif
     if (mSurface != EGL_NO_SURFACE) {
         eglDestroySurface(mDisplay, mSurface);
         mSurface = EGL_NO_SURFACE;
@@ -158,7 +161,16 @@ void DisplayDevice::init(EGLConfig config)
     mScreenAcquired = (mType >= DisplayDevice::NUM_DISPLAY_TYPES);
 
     // get an h/w composer ID
+#ifdef OMAP_ENHANCEMENT_HDMI_FB1
+    if (mFramebufferSurface != NULL) {
+        // Allocate HWC slots only for physical displays and WFD display. All these
+        // displays have a FramebufferSurface instance that communicates with HWC,
+        // so we use presence of FB as a trigger to allocate the slot.
+        mHwcDisplayId = mFlinger->allocateHwcDisplayId(mType);
+    }
+#else
     mHwcDisplayId = mFlinger->allocateHwcDisplayId(mType);
+#endif
 
     // Name the display.  The name will be replaced shortly if the display
     // was created with createDisplay().
@@ -225,8 +237,14 @@ void DisplayDevice::swapBuffers(HWComposer& hwc) const {
         // the virtual displays are on their own.
         // TODO: HWC 1.2 will allow virtual displays
         if (mType >= DisplayDevice::DISPLAY_VIRTUAL) {
+#ifdef OMAP_ENHANCEMENT_HDMI_FB1
+            if (mHwcDisplayId < 0 || hwc.hasGlesComposition(mHwcDisplayId)) {
+                success = eglSwapBuffers(mDisplay, mSurface);
+            }
+#else
             // always call eglSwapBuffers() for virtual displays
             success = eglSwapBuffers(mDisplay, mSurface);
+#endif
         } else if (hwc.supportsFramebufferTarget()) {
             // as of hwc 1.1 we always call eglSwapBuffers if we have some
             // GLES layers

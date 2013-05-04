@@ -257,6 +257,12 @@ Rect Layer::computeBufferCrop() const {
     return crop;
 }
 
+#ifdef OMAP_ENHANCEMENT_HDMI_FB1
+void Layer::setIdentity(HWComposer::HWCLayerInterface& layer) {
+    layer.setIdentity(getIdentity());
+}
+#endif
+
 void Layer::setGeometry(
     const sp<const DisplayDevice>& hw,
         HWComposer::HWCLayerInterface& layer)

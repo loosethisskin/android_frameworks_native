@@ -35,6 +35,9 @@ class HWComposer;
 class FramebufferSurface : public ConsumerBase {
 public:
     FramebufferSurface(HWComposer& hwc, int disp);
+#ifdef OMAP_ENHANCEMENT_HDMI_FB1
+    FramebufferSurface(HWComposer& hwc, int disp, uint32_t width, uint32_t height);
+#endif
 
     bool isUpdateOnDemand() const { return false; }
     status_t setUpdateRectangle(const Rect& updateRect);
