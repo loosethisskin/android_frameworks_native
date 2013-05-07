@@ -125,6 +125,10 @@ public:
     // allocate a h/w composer display id
     int32_t allocateHwcDisplayId(DisplayDevice::DisplayType type);
 
+#ifdef OMAP_ENHANCEMENT_HDMI_FB1
+    status_t freeHwcDisplayId(int32_t id);
+#endif
+
     // enable/disable h/w composer event
     // TODO: this should be made accessible only to EventThread
     void eventControl(int disp, int event, int enabled);

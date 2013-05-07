@@ -40,6 +40,10 @@
 #define NUM_FRAMEBUFFER_SURFACE_BUFFERS (2)
 #endif
 
+#ifdef OMAP_ENHANCEMENT_HDMI_FB1
+#define GRALLOC_USAGE_HW_FB1 GRALLOC_USAGE_PRIVATE_3
+#endif
+
 // ----------------------------------------------------------------------------
 namespace android {
 // ----------------------------------------------------------------------------
@@ -59,14 +63,42 @@ FramebufferSurface::FramebufferSurface(HWComposer& hwc, int disp) :
 {
     mName = "FramebufferSurface";
     mBufferQueue->setConsumerName(mName);
+#ifdef OMAP_ENHANCEMENT_HDMI_FB1
+    if (disp == 0)
+#endif
     mBufferQueue->setConsumerUsageBits(GRALLOC_USAGE_HW_FB |
                                        GRALLOC_USAGE_HW_RENDER |
                                        GRALLOC_USAGE_HW_COMPOSER);
+#ifdef OMAP_ENHANCEMENT_HDMI_FB1
+    else if (disp == 1)
+        mBufferQueue->setConsumerUsageBits(GRALLOC_USAGE_HW_FB1 |
+                                           GRALLOC_USAGE_HW_RENDER |
+                                           GRALLOC_USAGE_HW_COMPOSER);
+#endif
     mBufferQueue->setDefaultBufferFormat(mHwc.getFormat(disp));
     mBufferQueue->setDefaultBufferSize(mHwc.getWidth(disp),  mHwc.getHeight(disp));
     mBufferQueue->setSynchronousMode(true);
     mBufferQueue->setDefaultMaxBufferCount(NUM_FRAMEBUFFER_SURFACE_BUFFERS);
 }
+
+#ifdef OMAP_ENHANCEMENT_HDMI_FB1
+FramebufferSurface::FramebufferSurface(HWComposer& hwc, int disp, uint32_t width, uint32_t height) :
+    ConsumerBase(new BufferQueue(true, new GraphicBufferAlloc())),
+    mDisplayType(disp),
+    mCurrentBufferSlot(-1),
+    mCurrentBuffer(0),
+    mHwc(hwc)
+{
+    mName = "VirtualFramebuffer";
+    mBufferQueue->setConsumerName(mName);
+    mBufferQueue->setConsumerUsageBits(GRALLOC_USAGE_HW_RENDER |
+                                       GRALLOC_USAGE_HW_COMPOSER);
+    mBufferQueue->setDefaultBufferFormat(HAL_PIXEL_FORMAT_BGRA_8888);
+    mBufferQueue->setDefaultBufferSize(width, height);
+    mBufferQueue->setSynchronousMode(true);
+    mBufferQueue->setDefaultMaxBufferCount(NUM_FRAMEBUFFER_SURFACE_BUFFERS);
+}
+#endif
 
 status_t FramebufferSurface::nextBuffer(sp<GraphicBuffer>& outBuffer, sp<Fence>& outFence) {
     Mutex::Autolock lock(mMutex);

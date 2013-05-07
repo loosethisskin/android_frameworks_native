@@ -567,6 +567,12 @@ int32_t SurfaceFlinger::allocateHwcDisplayId(DisplayDevice::DisplayType type) {
             type : mHwc->allocateDisplayId();
 }
 
+#ifdef OMAP_ENHANCEMENT_HDMI_FB1
+status_t SurfaceFlinger::freeHwcDisplayId(int32_t id) {
+    return mHwc->freeDisplayId(id);
+}
+#endif
+
 void SurfaceFlinger::startBootAnim() {
     // start boot animation
     property_set("service.bootanim.exit", "0");
@@ -970,10 +976,18 @@ void SurfaceFlinger::setUpHWComposer() {
                         hw->getVisibleLayersSortedByZ());
                     const size_t count = currentLayers.size();
                     if (hwc.createWorkList(id, count) == NO_ERROR) {
+#ifdef OMAP_ENHANCEMENT_HDMI_FB1
+                        if (hwc.setLayerStack(id, hw->getLayerStack()) != NO_ERROR) {
+                            continue;
+                        }
+#endif
                         HWComposer::LayerListIterator cur = hwc.begin(id);
                         const HWComposer::LayerListIterator end = hwc.end(id);
                         for (size_t i=0 ; cur!=end && i<count ; ++i, ++cur) {
                             const sp<LayerBase>& layer(currentLayers[i]);
+#ifdef OMAP_ENHANCEMENT_HDMI_FB1
+                            layer->setIdentity(*cur);
+#endif
                             layer->setGeometry(hw, *cur);
                             if (mDebugDisableHWC || mDebugRegion) {
                                 cur->setSkip(true);
@@ -1148,8 +1162,18 @@ void SurfaceFlinger::handleTransactionLocked(uint32_t transactionFlags)
                         // is current.
                         const sp<const DisplayDevice> hw(getDefaultDisplayDevice());
                         DisplayDevice::makeCurrent(mEGLDisplay, hw, mEGLContext);
+#ifdef OMAP_ENHANCEMENT_HDMI_FB1
+                        if (getDisplayDevice(draw.keyAt(i)) != NULL) {
+                            int32_t hwcDisplayId = getDisplayDevice(draw.keyAt(i))->getHwcDisplayId();
+                            if (hwcDisplayId > 0) {
+                                getHwComposer().disconnectDisplay(hwcDisplayId);
+                            }
+                        }
+                        mDisplays.removeItem(draw.keyAt(i));
+#else
                         mDisplays.removeItem(draw.keyAt(i));
                         getHwComposer().disconnectDisplay(draw[i].type);
+#endif
                         mEventThread->onHotplugReceived(draw[i].type, false);
                     } else {
                         ALOGW("trying to remove the main display");
@@ -1163,6 +1187,14 @@ void SurfaceFlinger::handleTransactionLocked(uint32_t transactionFlags)
                         // recreating the DisplayDevice, so we just remove it
                         // from the drawing state, so that it get re-added
                         // below.
+#ifdef OMAP_ENHANCEMENT_HDMI_FB1
+                        if (getDisplayDevice(display) != NULL && state.surface == NULL) {
+                            int32_t hwcDisplayId = getDisplayDevice(display)->getHwcDisplayId();
+                            if (hwcDisplayId > 0) {
+                                getHwComposer().disconnectDisplay(hwcDisplayId);
+                            }
+                        }
+#endif
                         mDisplays.removeItem(display);
                         mDrawingState.displays.removeItemsAt(i);
                         dc--; i--;
@@ -1181,6 +1213,12 @@ void SurfaceFlinger::handleTransactionLocked(uint32_t transactionFlags)
                         {
                             disp->setProjection(state.orientation,
                                     state.viewport, state.frame);
+#ifdef OMAP_ENHANCEMENT_HDMI_FB1
+                            int32_t hwcDisplayId = disp->getHwcDisplayId();
+                            if (hwcDisplayId >= 0) {
+                                getHwComposer().setOrientation(hwcDisplayId, state.orientation);
+                            }
+#endif
                         }
                     }
                 }
@@ -1214,7 +1252,24 @@ void SurfaceFlinger::handleTransactionLocked(uint32_t transactionFlags)
                                         fbs->getBufferQueue()));
                     } else {
                         if (state.surface != NULL) {
+#ifdef OMAP_ENHANCEMENT_HDMI_FB1
+                            int stub;
+                            if (state.surface->query(
+                                    NATIVE_WINDOW_VIRTUAL_FRAMEBUFFER_STUB, &stub) == OK && stub) {
+                                int width;
+                                int height;
+                                state.surface->query(NATIVE_WINDOW_WIDTH, &width);
+                                state.surface->query(NATIVE_WINDOW_HEIGHT, &height);
+
+                                fbs = new FramebufferSurface(*mHwc, state.type, width, height);
+                                stc = new SurfaceTextureClient(
+                                        static_cast< sp<ISurfaceTexture> >(fbs->getBufferQueue()));
+                            } else {
+                                stc = new SurfaceTextureClient(state.surface);
+                            }
+#else
                             stc = new SurfaceTextureClient(state.surface);
+#endif
                         }
                         isSecure = state.isSecure;
                     }
@@ -1229,6 +1284,16 @@ void SurfaceFlinger::handleTransactionLocked(uint32_t transactionFlags)
                                 state.viewport, state.frame);
                         hw->setDisplayName(state.displayName);
                         mDisplays.add(display, hw);
+#ifdef OMAP_ENHANCEMENT_HDMI_FB1
+                        int32_t hwcDisplayId = hw->getHwcDisplayId();
+                        if (hwcDisplayId >= 0) {
+                            getHwComposer().setOrientation(hwcDisplayId, state.orientation);
+                            if (state.isVirtualDisplay()) {
+                                getHwComposer().connectVirtualDisplay(hwcDisplayId,
+                                        hw->getWidth(), hw->getHeight());
+                            }
+                        }
+#endif
                         mEventThread->onHotplugReceived(state.type, true);
                     }
                 }
@@ -2473,7 +2538,23 @@ void SurfaceFlinger::dumpAllLocked(
 const Vector< sp<LayerBase> >&
 SurfaceFlinger::getLayerSortedByZForHwcDisplay(int disp) {
     // Note: mStateLock is held here
+#ifdef OMAP_ENHANCEMENT_HDMI_FB1
+    if (uint32_t(disp) < DisplayDevice::NUM_DISPLAY_TYPES) {
+        return getDisplayDevice(getBuiltInDisplay(disp))->getVisibleLayersSortedByZ();
+    } else {
+        const KeyedVector< wp<IBinder>, DisplayDeviceState>& draw(mDrawingState.displays);
+        for (size_t i = 0; i < draw.size(); i++) {
+            const sp<DisplayDevice> hw(getDisplayDevice(draw.keyAt(i)));
+            if (hw != NULL && hw->getHwcDisplayId() == disp) {
+                return hw->getVisibleLayersSortedByZ();
+            }
+        }
+        static const Vector< sp<LayerBase> > empty;
+        return empty;
+    }
+#else
     return getDisplayDevice( getBuiltInDisplay(disp) )->getVisibleLayersSortedByZ();
+#endif
 }
 
 bool SurfaceFlinger::startDdmConnection()

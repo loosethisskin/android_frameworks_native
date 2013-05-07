@@ -39,6 +39,12 @@ struct hwc_display_contents_1;
 struct hwc_layer_1;
 struct hwc_procs;
 struct framebuffer_device_t;
+#ifdef OMAP_ENHANCEMENT_HDMI_FB1
+struct hwc_layer_extended;
+struct hwc_layer_list_extended;
+struct hwc_layer_stack;
+struct hwc_display_info;
+#endif
 
 namespace android {
 // ---------------------------------------------------------------------------
@@ -97,11 +103,20 @@ public:
     // acquire hardware resources and unblank screen
     status_t acquire(int disp);
 
+#ifdef OMAP_ENHANCEMENT_HDMI_FB1
+    status_t connectVirtualDisplay(int disp, uint32_t width, uint32_t height);
+#endif
+
     // reset state when an external, non-virtual display is disconnected
     void disconnectDisplay(int disp);
 
     // create a work list for numLayers layer. sets HWC_GEOMETRY_CHANGED.
     status_t createWorkList(int32_t id, size_t numLayers);
+
+#ifdef OMAP_ENHANCEMENT_HDMI_FB1
+    status_t setLayerStack(int32_t id, uint32_t stack);
+    status_t setOrientation(int32_t id, uint32_t orientation);
+#endif
 
     bool supportsFramebufferTarget() const;
 
@@ -141,6 +156,9 @@ public:
         virtual int32_t getCompositionType() const = 0;
         virtual uint32_t getHints() const = 0;
         virtual int getAndResetReleaseFenceFd() = 0;
+#ifdef OMAP_ENHANCEMENT_HDMI_FB1
+        virtual void setIdentity(uint32_t identity) = 0;
+#endif
         virtual void setPerFrameDefaultState() = 0;
         virtual void setDefaultState() = 0;
         virtual void setSkip(bool skip) = 0;
@@ -275,6 +293,13 @@ private:
     static void hook_hotplug(const struct hwc_procs* procs, int disp,
             int connected);
 
+#ifdef OMAP_ENHANCEMENT_HDMI_FB1
+    static int hook_extension_cb(struct hwc_procs* procs, int operation,
+            void** data, int size);
+    int extendedApiLayerData(hwc_layer_extended* linfo);
+    int extendedApiLayerStack(hwc_layer_stack* param);
+    int extendedApiDisplayInfo(hwc_display_info* param);
+#endif
     inline void invalidate();
     inline void vsync(int disp, int64_t timestamp);
     inline void hotplug(int disp, int connected);
@@ -289,6 +314,9 @@ private:
         DisplayData() : xdpi(0), ydpi(0), refresh(0),
             connected(false), hasFbComp(false), hasOvComp(false),
             capacity(0), list(NULL),
+#ifdef OMAP_ENHANCEMENT_HDMI_FB1
+            listExt(NULL), layerStack(0), orientation(0),
+#endif
             framebufferTarget(NULL), fbTargetHandle(NULL), events(0) { }
         ~DisplayData() {
             free(list);
@@ -304,6 +332,11 @@ private:
         bool hasOvComp;
         size_t capacity;
         hwc_display_contents_1* list;
+#ifdef OMAP_ENHANCEMENT_HDMI_FB1
+        hwc_layer_list_extended* listExt;
+        uint32_t layerStack;
+        uint32_t orientation;
+#endif
         hwc_layer_1* framebufferTarget;
         buffer_handle_t fbTargetHandle;
         // protected by mEventControlLock
@@ -312,10 +345,19 @@ private:
 
     sp<SurfaceFlinger>              mFlinger;
     framebuffer_device_t*           mFbDev;
+#ifdef OMAP_ENHANCEMENT_HDMI_FB1
+    // we still use FB HAL to do composition, so
+    // creating one more fb instance for HWCv1.1
+    // FIXME: remove FB HAL.
+    framebuffer_device_t*           mFbDev2;
+#endif
     struct hwc_composer_device_1*   mHwc;
     // invariant: mLists[0] != NULL iff mHwc != NULL
     // mLists[i>0] can be NULL. that display is to be ignored
     struct hwc_display_contents_1*  mLists[MAX_DISPLAYS];
+#ifdef OMAP_ENHANCEMENT_HDMI_FB1
+    hwc_layer_list_extended*        mListsExt[MAX_DISPLAYS];
+#endif
     DisplayData                     mDisplayData[MAX_DISPLAYS];
     size_t                          mNumDisplays;
 

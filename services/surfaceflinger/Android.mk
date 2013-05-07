@@ -64,6 +64,9 @@ ifeq ($(BOARD_USES_SAMSUNG_HDMI),true)
         LOCAL_C_INCLUDES += hardware/samsung/$(TARGET_BOARD_PLATFORM)/include
 endif
 
+ifeq ($(BOARD_USES_OMAP_ENHANCEMENT_HDMI_FB1),true)
+        LOCAL_CFLAGS += -DOMAP_ENHANCEMENT_HDMI_FB1
+endif
 
 LOCAL_MODULE:= libsurfaceflinger
 
