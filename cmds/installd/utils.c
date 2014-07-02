@@ -219,7 +219,8 @@ int is_valid_package_name(const char* pkgname) {
     return 0;
 }
 
-static int _delete_dir_contents(DIR *d, const char *ignore)
+static int _delete_dir_contents(DIR *d,
+                                int (*exclusion_predicate)(const char *name, const int is_dir))
 {
     int result = 0;
     struct dirent *de;
@@ -232,8 +233,10 @@ static int _delete_dir_contents(DIR *d, const char *ignore)
     while ((de = readdir(d))) {
         const char *name = de->d_name;
 
-            /* skip the ignore name if provided */
-        if (ignore && !strcmp(name, ignore)) continue;
+            /* check using the exclusion predicate, if provided */
+        if (exclusion_predicate && exclusion_predicate(name, (de->d_type == DT_DIR))) {
+            continue;
+        }
 
         if (de->d_type == DT_DIR) {
             int r, subfd;
@@ -258,7 +261,7 @@ static int _delete_dir_contents(DIR *d, const char *ignore)
                 result = -1;
                 continue;
             }
-            if (_delete_dir_contents(subdir, 0)) {
+            if (_delete_dir_contents(subdir, exclusion_predicate)) {
                 result = -1;
             }
             closedir(subdir);
@@ -279,7 +282,7 @@ static int _delete_dir_contents(DIR *d, const char *ignore)
 
 int delete_dir_contents(const char *pathname,
                         int also_delete_dir,
-                        const char *ignore)
+                        int (*exclusion_predicate)(const char*, const int))
 {
     int res = 0;
     DIR *d;
@@ -289,7 +292,7 @@ int delete_dir_contents(const char *pathname,
         ALOGE("Couldn't opendir %s: %s\n", pathname, strerror(errno));
         return -errno;
     }
-    res = _delete_dir_contents(d, ignore);
+    res = _delete_dir_contents(d, exclusion_predicate);
     closedir(d);
     if (also_delete_dir) {
         if (rmdir(pathname)) {
@@ -1036,50 +1039,27 @@ int ensure_config_user_dirs(userid_t userid) {
 
 int create_profile_file(const char *pkgname, gid_t gid) {
     const char *profile_dir = DALVIK_CACHE_PREFIX "profiles";
-    struct stat profileStat;
     char profile_file[PKG_PATH_MAX];
-
-    // If we don't have a profile directory under dalvik-cache we need to create one.
-    if (stat(profile_dir, &profileStat) < 0) {
-        // Create the profile directory under dalvik-cache.
-        if (mkdir(profile_dir, 0711) < 0) {
-            ALOGE("cannot make profile dir '%s': %s\n", profile_dir, strerror(errno));
-            return -1;
-        }
-
-        // Make the profile directory write-only for group and other. Owner can rwx it.
-        if (chmod(profile_dir, 0711) < 0) {
-            ALOGE("cannot chown profile dir '%s': %s\n", profile_dir, strerror(errno));
-            rmdir(profile_dir);
-            return -1;
-        }
-
-        if (selinux_android_restorecon(profile_dir, 0) < 0) {
-            ALOGE("cannot restorecon profile dir '%s': %s\n", profile_dir, strerror(errno));
-            rmdir(profile_dir);
-            return -1;
-        }
-    }
 
     snprintf(profile_file, sizeof(profile_file), "%s/%s", profile_dir, pkgname);
 
     // The 'system' user needs to be able to read the profile to determine if dex2oat
     // needs to be run.  This is done in dalvik.system.DexFile.isDexOptNeededInternal().  So
-    // we make it world readable.  Not a problem since the dalvik cache is world
-    // readable anyway.
+    // we assign ownership to AID_SYSTEM and ensure it's not world-readable.
 
-    int fd = open(profile_file, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0664);
+    int fd = open(profile_file, O_WRONLY | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0660);
 
-    // Open will fail if the file already exists.  We want to ignore that.
+    // Always set the uid/gid/permissions. The file could have been previously created
+    // with different permissions.
     if (fd >= 0) {
-        if (fchown(fd, -1, gid) < 0) {
+        if (fchown(fd, AID_SYSTEM, gid) < 0) {
             ALOGE("cannot chown profile file '%s': %s\n", profile_file, strerror(errno));
             close(fd);
             unlink(profile_file);
             return -1;
         }
 
-        if (fchmod(fd, 0664) < 0) {
+        if (fchmod(fd, 0660) < 0) {
             ALOGE("cannot chmod profile file '%s': %s\n", profile_file, strerror(errno));
             close(fd);
             unlink(profile_file);
