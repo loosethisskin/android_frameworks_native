@@ -662,6 +662,7 @@ void HWComposer::eventControl(int disp, int event, int enabled) {
         return;
     }
 #ifdef OLD_HWC_API
+    status_t err = NO_ERROR;
     switch(event) {
          case EVENT_VSYNC:
             if (mHwc && !mDebugForceFakeVSync) {
@@ -693,15 +694,16 @@ void HWComposer::eventControl(int disp, int event, int enabled) {
                   mVSyncThread->setEnabled(enabled);
               }
               break;
-          case EVENT_ORIENTATION:
-              // Orientation event
-              if (hwcHasApiVersion(mHwc, HWC_DEVICE_API_VERSION_1_0))
-                err = mHwc->eventControl(mHwc, disp, event, enabled);
-              break;
+//          case EVENT_ORIENTATION:
+//              // Orientation event
+//              if (hwcHasApiVersion(mHwc, HWC_DEVICE_API_VERSION_1_0))
+//                err = mHwc->eventControl(mHwc, disp, event, enabled);
+//              break;
           default:
               ALOGW("eventControl got unexpected event %d (disp=%d en=%d)",
                       event, disp, enabled);
               break;
+    }
 #else
     if (event != EVENT_VSYNC) {
         ALOGW("eventControl got unexpected event %d (disp=%d en=%d)",
